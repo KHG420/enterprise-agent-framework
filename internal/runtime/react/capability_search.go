@@ -309,7 +309,7 @@ func searchAuthorizedCapabilities(caps map[string]agentcontract.CapabilityDescri
 func capabilitySelectionInstruction(state *agentcontract.RuntimeState) string {
 	instruction, wrapped := strings.CutPrefix(state.Instruction, "Current user request:\n")
 	if wrapped {
-		instruction, _, _ = strings.Cut(instruction, "\n\nEarlier conversation (")
+		instruction, _, _ = strings.Cut(instruction, "\n\nEarlier conversation")
 	}
 	return instruction + " " + strings.Join(state.Followups, " ")
 }
