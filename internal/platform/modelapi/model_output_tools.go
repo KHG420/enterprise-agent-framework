@@ -205,6 +205,7 @@ func decisionOutputToolBody(calls []decisionOutputToolCall, tools []any) ([]byte
 		return nil, "model_output_tool_calls_invalid"
 	}
 	raw := []byte(calls[0].Function.Arguments)
+	raw, _ = normalizeModelJSON(raw)
 	if detail := modelJSONFormatError(raw); detail != "" {
 		return nil, detail
 	}

@@ -34,6 +34,7 @@ func (m *HTTPJSONDecisionModel) ExtractMemoriesMeasured(ctx context.Context, req
 	if err != nil {
 		return nil, metrics, err
 	}
+	raw, _ = normalizeModelJSON(raw)
 	var response struct {
 		Proposals []agentcontract.MemoryProposal `json:"proposals"`
 	}

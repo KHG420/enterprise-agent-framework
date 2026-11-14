@@ -210,6 +210,7 @@ func nativeDecisionOutputToolBody(calls []decisionOutputToolCall, tools []any, p
 		return nil, "model_output_tool_calls_invalid"
 	}
 	raw := []byte(calls[0].Function.Arguments)
+	raw, _ = normalizeModelToolJSON(raw, function["parameters"].(agentcontract.JSON))
 	if detail := modelJSONFormatError(raw); detail != "" {
 		return nil, detail
 	}

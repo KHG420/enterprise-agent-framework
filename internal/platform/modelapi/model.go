@@ -472,6 +472,7 @@ func (m *HTTPJSONDecisionModel) requestJSON(ctx context.Context, input []byte, p
 		return nil, invalidModelOutput(ctx, "model_output_empty")
 	}
 	body = unwrapModelJSON([]byte(envelope.Choices[0].Message.Content))
+	body, _ = normalizeModelJSON(body)
 	if usage := envelope.Usage; outputLimit > 0 && usage != nil && usage.Output != nil && *usage.Output >= outputLimit && *usage.Output <= 1000000000 {
 		// Compatible gateways may also label a nonempty cut-off JSON response as
 		// stop. Infer exhaustion only for an unfinished JSON value at the known

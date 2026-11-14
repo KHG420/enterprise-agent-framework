@@ -21,6 +21,20 @@ func memoryModelReply(t *testing.T, w http.ResponseWriter, content string) {
 	}
 }
 
+func TestMemoryExtractionPromptRetainsTemporaryAnswerScope(t *testing.T) {
+	for _, rule := range []string{
+		"An imperative alone establishes current-task scope.",
+		"'请把这份报告写成中文' -> report.language=zh-CN, temporary",
+		"'Please answer briefly in English' -> response.language=en, response.detail=brief, temporary",
+		"'我平时喜欢简短回答' -> response.detail=brief, habit",
+		"'以后这个项目报告都用英文' -> pack report.language=en, explicit",
+	} {
+		if !strings.Contains(agentcontract.MemoryExtractionPrompt, rule) {
+			t.Fatal("memory extraction lost the current-answer or lasting-preference scope", rule)
+		}
+	}
+}
+
 func TestMemoryHTTPJSONExtractorContractAndBudget(t *testing.T) {
 	for _, tc := range []struct {
 		name, content string
