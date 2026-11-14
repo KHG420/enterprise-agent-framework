@@ -67,6 +67,41 @@ func contextBudgetRuntime(t *testing.T, budget int) (*AgentRuntime, *agentcontra
 	return runtime, state, provider
 }
 
+func TestContextBudgetDefersConsumedContractBeforeInspectionHistory(t *testing.T) {
+	runtime, state, provider := contextBudgetRuntime(t, 6500)
+	capability := agentcontract.CapabilityDescription{Name: "record.read", InputSchema: agentcontract.JSON{
+		"type": "object", "description": strings.Repeat("contract ", 600),
+	}}
+	provider.caps[capability.Name] = capability
+	runtime.Grants[capability.Name] = true
+	state.Facts = []agentcontract.Fact{
+		contextBudgetFact(agentcontract.JSON{"value": "first requested formula"}),
+		contextBudgetFact(agentcontract.JSON{"value": "second requested formula"}),
+	}
+	state.InspectedCapability = agentcontract.Strptr(capability.Name)
+	state.Observations = []agentcontract.Observation{{CallRef: "read", Capability: capability.Name, Status: "succeeded"}}
+	state.ModelObservations = slices.Clone(state.Observations)
+	state.Decisions = []agentcontract.JSON{
+		{"kind": "inspect_capability", "name": capability.Name},
+		{"kind": "tool_batch", "calls": []any{agentcontract.JSON{"call_ref": "read", "capability": capability.Name}}},
+		{"kind": "inspect_fact", "fact_id": state.Facts[0].FactID, "path": []any{"value"}},
+		{"kind": "inspect_fact", "fact_id": state.Facts[1].FactID, "path": []any{"value"}},
+	}
+	var err error
+	state.InspectedFact, err = inspectionView(map[string]agentcontract.Fact{state.Facts[1].FactID: state.Facts[1]}, state.Facts[1].FactID, []any{"value"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := runtime.Context(state)
+	assertContextBudget(t, packet, runtime.SystemPrompt(), runtime.MaxContextCharacters)
+	if packet.InspectedCapability != nil || len(packet.InspectionHistory) != 1 {
+		t.Fatal("consumed contract displaced completed evidence", packet.InspectedCapability, packet.InspectionHistory)
+	}
+	if state.InspectedCapability == nil || *state.InspectedCapability != capability.Name {
+		t.Fatal("projection changed the complete run state")
+	}
+}
+
 func assertContextBudget(t *testing.T, packet agentcontract.ContextPacket, prompt string, budget int) int {
 	t.Helper()
 	raw, err := agentcontract.CanonicalJSON(packet)

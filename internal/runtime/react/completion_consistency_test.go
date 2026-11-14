@@ -105,9 +105,12 @@ func TestCompletionFeedbackRejectsPrematurePublication(t *testing.T) {
 	if err := json.Unmarshal(raw, &restored); err != nil {
 		t.Fatal(err)
 	}
-	r.Model = decisionModelFunc(func(_ context.Context, packet agentcontract.ContextPacket, _ string) (agentcontract.Decision, error) {
+	r.Model = decisionModelFunc(func(_ context.Context, packet agentcontract.ContextPacket, prompt string) (agentcontract.Decision, error) {
 		if packet.CompletionReview != nil || len(packet.Observations) < 1 || *packet.Observations[len(packet.Observations)-1].ErrorCode != "completion_incomplete" {
 			t.Fatal("feedback did not return to ordinary execution after checkpoint", packet)
+		}
+		if !strings.Contains(prompt, "The requested independent read has not executed.") {
+			t.Fatal("ordinary correction guidance omitted the latest review feedback")
 		}
 		return callDecision("record.create"), nil
 	})

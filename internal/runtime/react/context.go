@@ -41,6 +41,12 @@ func budgetContext(packet agentcontract.ContextPacket, state *agentcontract.Runt
 			baseOmissions = append(baseOmissions, note)
 		}
 	}
+	// A contract already used by a successful call can be reloaded. Defer it
+	// before discarding completed inspections needed to combine their evidence.
+	if name, ok := packet.InspectedCapability["name"].(string); ok && capabilityInspectionConsumed(state, name) {
+		packet.InspectedCapability = nil
+		baseOmissions = append(baseOmissions, "Capability "+name+" contract deferred. Use inspect_capability to reload it.")
+	}
 
 	// Collection sizes describe the final preview, rather than an earlier projection.
 	noteLimit := 24

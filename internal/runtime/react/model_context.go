@@ -86,10 +86,11 @@ func (r *AgentRuntime) tokenProjection(state *agentcontract.RuntimeState, packet
 			reason = "soft_threshold"
 		}
 	}
+	original := packet
 	for i := 0; err == nil && limit > 0 && m.Tokens > goal && i < 24; i++ {
 		before := contextCharacters(packet)
 		allowance := int(float64(before)*float64(goal)/float64(m.Tokens)) - 16
-		next := budgetContext(packet, state, max(0, allowance))
+		next := budgetContext(original, state, max(0, allowance))
 		packet = next
 		m, err = measure(packet)
 		if contextCharacters(next) >= before {

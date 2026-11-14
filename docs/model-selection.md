@@ -98,7 +98,7 @@ model.DecisionPrompt = func(packet agenstra.ContextPacket, prompt string) string
 }
 ```
 
-`StreamAnswers` 默认关闭。开启后仅该实例的业务决策使用 Chat Completions SSE，并请求 `stream_options.include_usage`；记忆提取仍使用原 JSON 请求。直接构造 `HTTPJSONDecisionModel` 时也可设置这个字段。网关须支持此协议；断流、格式错误和输出截断仍按原错误与预算规则处理，不自动切换传输或修补 JSON。实现不会替换全局 HTTP transport，也不修改调用方提供的 client。
+`StreamAnswers` 默认关闭。开启后仅该实例的业务决策使用 Chat Completions SSE，并请求 `stream_options.include_usage`；记忆提取仍使用原 JSON 请求。直接构造 `HTTPJSONDecisionModel` 时也可设置这个字段。网关须支持此协议；断流、格式错误和输出截断仍按原错误与预算规则处理，使用下文的有界 JSON 格式兼容与原有传输配置。实现不会替换全局 HTTP transport，也不修改调用方提供的 client。
 
 流式分片重组为原响应后，继续经过用量核算、严格决策校验、完成复核、证据检查和宿主 `CompletionValidator`。展示中的答案是可撤回候选；正式结果仍来自已保存的 run。推理、工具参数与已知内部 Fact ID 不进入答案流。浏览器接线见 [Web 答案订阅](web-integration.md#答案流订阅)。
 
@@ -122,13 +122,13 @@ DeepSeek 开启或默认推理时，`output_tools` 与 `native_tools` 使用 `to
 
 输出策略适用于所有使用本适配器的兼容 Chat Completions 模型，由各模型配置及实际网关能力决定，不按模型名分支。相同模型经过不同网关时，支持程度也可能不同。管理员应分别验证连接、决策输出格式、业务输入契约和完整任务；单次合成检查通过或 HTTP 200 不能证明网关严格执行 Schema，也不能证明任务正确完成。
 
-可选 `decision_output_mode` 选择业务决策输出：省略或 `json_object` 保持现有 JSON 内容；`output_tools` 提供一个类型化输出函数 `submit_decision`，通过明确的 `tool_choice` 选择该函数，并设置 `parallel_tool_calls=false`。参数形如 `{"kind":"final","answer_markdown":"...","fact_ids":[]}`；参数在根部声明原生字段类型，并用带固定 `kind` 的对象联合约束每种决策，各决策保留原有字段和类型约束。模型不能设置 `schema`；适配器校验决策种类和调用引用后，赋予固定 `schema`，继续使用原有 `agenstra.decision.v1` 校验。此设置不影响记忆提取。仅对已实测支持该协议的网关启用；接受参数不等于网关严格执行 Schema。未知或多个输出工具、错误类型、重复键和不匹配的决策均被拒绝，仍使用原有本地校验、授权与预算。工具定义和输出提示计入实际请求预算。不会从普通文字中提取或修复 JSON，也不会自动改用另一种输出方式掩盖异常。已有任务继续使用创建时冻结的模型配置。
+可选 `decision_output_mode` 选择业务决策输出：省略或 `json_object` 保持现有 JSON 内容；`output_tools` 提供一个类型化输出函数 `submit_decision`，通过明确的 `tool_choice` 选择该函数，并设置 `parallel_tool_calls=false`。参数形如 `{"kind":"final","answer_markdown":"...","fact_ids":[]}`；参数在根部声明原生字段类型，并用带固定 `kind` 的对象联合约束每种决策，各决策保留原有字段和类型约束。模型不能设置 `schema`；适配器校验决策种类和调用引用后，赋予固定 `schema`，继续使用原有 `agenstra.decision.v1` 校验。此设置不影响记忆提取。仅对已实测支持该协议的网关启用；接受参数不等于网关严格执行 Schema。未知或多个输出工具、错误类型、重复键和不匹配的决策均被拒绝，仍使用原有本地校验、授权与预算。工具定义和输出提示计入实际请求预算。完整对象的格式兼容按下文执行，原有输出方式和本地校验继续生效。已有任务继续使用创建时冻结的模型配置。
 
 `decision_output_mode: "json_schema"` 使用原生 JSON Schema 正文输出：请求的 `response_format.type` 为 `json_schema`，不声明输出工具。Schema 沿用当前可用决策的字段和 `kind` 联合，要求固定 `schema: "agenstra.decision.v1"`；普通业务调用仍须提供合法且未复用的 `call_ref`，完成复核只允许 `final` 并要求 `completion_feedback`。无技能或未启用搜索时不声明相应决策。Schema、提示和历史证据全部计入实际输入测量与预算。
 
 原生模式显式使用 `strict: false`，因为决策含有可选字段及开放的宿主业务参数，不满足部分供应商 strict 模式要求的封闭对象约束。仅为实测支持这份 JSON Schema 的网关选择此模式；接受请求不等于供应商强制执行全部约束。框架仍对完整 JSON、重复键、请求所声明的 Schema 和原有 Decision 契约逐层校验，再由运行内核核对业务参数、权限、审批与调用证据。普通业务 JSON、未声明决策、缺少复核反馈和意外的工具调用均被拒绝；不自动包装、补字段或切换传输方式。原有默认模式和已创建任务的冻结配置保持原行为，记忆提取继续使用其原 JSON 契约。这项通道区分及本地校验参考 [Pydantic AI 的 native、prompted 与 tool 输出](https://github.com/pydantic/pydantic-ai/blob/72d89d136b5d155e52f5c2b054175420459fb6f4/pydantic_ai_slim/pydantic_ai/_output.py#L736-L780)。网关协议探针通过后仍需完整真实任务验收。
 
-`native_tools` 将当前已提供完整输入 Schema 的能力分别声明为原生函数，参数直接使用该业务契约；含路由分隔符的能力 ID 映射成符合网关命名约束的稳定函数名，函数说明保留完整能力 ID。解码只接受本次请求真实声明的函数名，不把未知名称当作别名。`read_skill`、`search_capabilities`、`inspect_capability`、`inspect_fact`、`request_input` 和 `final` 使用独立控制函数；`tool_call` 以 `capability`、`arguments`、`reason` 提交单项业务提案，`tool_batch` 以 `calls` 数组提交最多四项独立业务调用；两者的能力名均限制为本次已有完整契约的能力。普通决策可由一个已声明的控制／提案函数，或一至四个已声明的原生业务函数表示；后者按响应顺序转换为现有单条 `tool_batch`。控制、提案和最终回答不能与其他函数混用，完成复核只提供单个 `final` 或 `approve_completion`。原生函数完整保留原始输入 Schema，包括本地引用、嵌套资源和条件约束。含 `$fact_value`／`$fact_id` 的原生业务参数与两个提案入口的参数沿用同一符号提案语义：适配器严格检查 JSON 和已声明函数，运行时校验引用形状、可见性及有效期，解析已获准的事实值后完整校验原始业务契约、身份、授权、审批和预算，任一失败均不得执行业务操作。无引用的原生参数仍在适配器校验原始 Schema。带引用的原生参数若声明为封闭对象，适配器仍先按 properties 和 patternProperties 核对顶层参数名，拒绝未声明的字段；不会因引用而接受额外的 reason 等元数据，也不会删除这些字段。引用的实际值、嵌套契约以及整体参数对象的引用继续由运行时解析后完整校验。模型对含 `$fact_value`／`$fact_id` 的单次调用优先使用已声明的扁平 `tool_call` 提案入口，因为它的 `arguments` 对象可以表达符号值，而原生业务函数继续声明解析后的业务类型。适配器先严格校验当轮声明的提案字段，再生成本地调用引用并归一为现有单条 `tool_batch` 决策；不会拼接不完整数组项、移动字段或删除额外参数。单条 `tool_batch` 及已有原生引用提案的解析和校验保持生效。这个工具用途区分参考 [Claude 的工具描述与入参契约建议](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)；适配器不改写业务 Schema、不强制类型转换、不删除额外参数、不修补 JSON。用户明确指定输入引用或先前结果来源时，匹配的字面值不能替代该引用；最终回答的事实引用与输入引用分别处理。原生函数定义与历史内容计入实际请求预算，调用引用由适配器分配。记忆提取继续使用原有 JSON 内容。此模式适用于经实际检查支持原生函数的兼容网关，不按模型名称切换或自动回退。工具定义与参数映射的取舍参考 [Pydantic AI 的 ToolDefinition 映射](https://github.com/pydantic/pydantic-ai/blob/72d89d136b5d155e52f5c2b054175420459fb6f4/pydantic_ai_slim/pydantic_ai/models/openai.py#L1942-L1955)。
+`native_tools` 将当前已提供完整输入 Schema 的能力分别声明为原生函数，参数直接使用该业务契约；含路由分隔符的能力 ID 映射成符合网关命名约束的稳定函数名，函数说明保留完整能力 ID。解码只接受本次请求真实声明的函数名，不把未知名称当作别名。`read_skill`、`search_capabilities`、`inspect_capability`、`inspect_fact`、`request_input` 和 `final` 使用独立控制函数；`tool_call` 以 `capability`、`arguments`、`reason` 提交单项业务提案，`tool_batch` 以 `calls` 数组提交最多四项独立业务调用；两者的能力名均限制为本次已有完整契约的能力。普通决策可由一个已声明的控制／提案函数，或一至四个已声明的原生业务函数表示；后者按响应顺序转换为现有单条 `tool_batch`。控制、提案和最终回答不能与其他函数混用，完成复核只提供单个 `final` 或 `approve_completion`。原生函数完整保留原始输入 Schema，包括本地引用、嵌套资源和条件约束。含 `$fact_value`／`$fact_id` 的原生业务参数与两个提案入口的参数沿用同一符号提案语义：适配器严格检查 JSON 和已声明函数，运行时校验引用形状、可见性及有效期，解析已获准的事实值后完整校验原始业务契约、身份、授权、审批和预算，任一失败均不得执行业务操作。无引用的原生参数仍在适配器校验原始 Schema。带引用的原生参数若声明为封闭对象，适配器仍先按 properties 和 patternProperties 核对顶层参数名，拒绝未声明的字段；不会因引用而接受额外的 reason 等元数据，也不会删除这些字段。引用的实际值、嵌套契约以及整体参数对象的引用继续由运行时解析后完整校验。模型对含 `$fact_value`／`$fact_id` 的单次调用优先使用已声明的扁平 `tool_call` 提案入口，因为它的 `arguments` 对象可以表达符号值，而原生业务函数继续声明解析后的业务类型。适配器先严格校验当轮声明的提案字段，再生成本地调用引用并归一为现有单条 `tool_batch` 决策；不会拼接不完整数组项、移动字段或删除额外参数。单条 `tool_batch` 及已有原生引用提案的解析和校验保持生效。这个工具用途区分参考 [Claude 的工具描述与入参契约建议](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)；适配器不改写业务 Schema、不强制类型转换、不删除额外参数。完整对象的格式兼容按下文执行。用户明确指定输入引用或先前结果来源时，匹配的字面值不能替代该引用；最终回答的事实引用与输入引用分别处理。原生函数定义与历史内容计入实际请求预算，调用引用由适配器分配。记忆提取继续使用原有 JSON 内容。此模式适用于经实际检查支持原生函数的兼容网关，不按模型名称切换或自动回退。工具定义与参数映射的取舍参考 [Pydantic AI 的 ToolDefinition 映射](https://github.com/pydantic/pydantic-ai/blob/72d89d136b5d155e52f5c2b054175420459fb6f4/pydantic_ai_slim/pydantic_ai/models/openai.py#L1942-L1955)。
 
 原生业务函数的对象和数组参数保持对应 JSON 类型，不将它们编码成字符串。任何嵌套值使用符号 Fact 引用时，通过既有 `tool_call` 的 `arguments` 对象提交完整参数；运行时解析引用后仍按原始业务 Schema 校验。
 
@@ -168,11 +168,11 @@ DeepSeek 开启或默认推理时，`output_tools` 与 `native_tools` 使用 `to
 
 业务运行继续保留原有严格解析与有界纠正，不截取 JSON 前缀或剥除协议片段。`ModelCallMetrics.format_error` 区分 `model_response_invalid`、`model_output_empty`、`model_output_invalid_json`、`model_output_protocol_mismatch`、`model_decision_schema_invalid` 和 `model_memory_schema_invalid`。外层 `model_decision_invalid` 及既有纠正规则保持可用；诊断接口展示具体原因和后续成功纠正的记录。
 
-业务决策的 JSON 语法错误保留标准解码器的字节位置与原因，供原有的一次格式纠正使用；提示不回显被拒绝的模型原文。普通决策的纠正还明确调用对象与其 `arguments` 的闭合边界，要求所有业务输入字段留在同一个 `arguments` 对象中。该反馈同时适用于 JSON 内容、JSON Schema 和输出工具参数，不自动补括号、搬动字段或修改业务值；无效输出始终不能进入业务执行。错误码、轮次、审批和输出预算沿用原规则，后续模型仍可能再次返回无效内容。提供具体、可操作反馈的取舍参考 [Anthropic 的工具错误与描述指南](https://www.anthropic.com/engineering/writing-tools-for-agents)；实际恢复效果需在目标模型和网关验证。
+业务决策的 JSON 语法错误保留标准解码器的字节位置与原因，供原有的一次格式纠正使用；提示不回显被拒绝的模型原文。普通决策的纠正还明确调用对象与其 `arguments` 的闭合边界，要求所有业务输入字段留在同一个 `arguments` 对象中。该反馈同时适用于 JSON 内容、JSON Schema 和输出工具参数，保留字段位置与业务值，格式兼容范围见下文；无效输出始终不能进入业务执行。错误码、轮次、审批和输出预算沿用原规则，后续模型仍可能再次返回无效内容。提供具体、可操作反馈的取舍参考 [Anthropic 的工具错误与描述指南](https://www.anthropic.com/engineering/writing-tools-for-agents)；实际恢复效果需在目标模型和网关验证。
 
 JSON 内容和类型化工具模式在普通决策上下文的技能列表为空时，都不再提供框架的 `read_skill` 示例或要求读取技能，并明确区分技能与可调用能力；类型化工具的使用提示与当轮输出 Schema 保持一致。这沿用按当前可用集合提供决策的原则，参考 [Pydantic AI 对当前工具集合的过滤](https://github.com/pydantic/pydantic-ai/blob/72d89d136b5d155e52f5c2b054175420459fb6f4/pydantic_ai_slim/pydantic_ai/models/openai.py#L1583-L1620)；能力仍须遵守原有契约、前置条件和授权。已有技能、完成复核及记忆提取的提示保持各自语义。动态提示同样纳入请求输入测量，不保证模型必然遵守，运行内核继续拒绝不存在的技能。
 
-JSON 内容输出的首次决策说明与格式纠正说明都提供本地 `call_ref` 的现有约束：`^[a-z][a-z0-9-]{0,63}$`。模型可以使用 `read-1`、`read-2` 等新引用；能力名称、操作名称和参数值继续遵守各自契约，包括操作名称里的大写字母。这个引用仅用于本次运行的调用身份，框架仍严格校验。`output_tools` 由适配器分配本地引用，业务参数与事实引用不作类型转换或自动修复。提供输出约束及有界纠正的取舍参考 [Pydantic AI 的输出契约提示](https://github.com/pydantic/pydantic-ai/blob/721c78d6014f197c595a9c2a83789aa4dbf6d008/pydantic_ai_slim/pydantic_ai/_output.py#L722-L733) 和 [校验错误转为重试反馈](https://github.com/pydantic/pydantic-ai/blob/721c78d6014f197c595a9c2a83789aa4dbf6d008/pydantic_ai_slim/pydantic_ai/_output.py#L124-L126)。Agenstra 沿用自己的安全错误码和恢复预算。
+JSON 内容输出的首次决策说明与格式纠正说明都提供本地 `call_ref` 的现有约束：`^[a-z][a-z0-9-]{0,63}$`。模型可以使用 `read-1`、`read-2` 等新引用；能力名称、操作名称和参数值继续遵守各自契约，包括操作名称里的大写字母。这个引用仅用于本次运行的调用身份，框架仍严格校验。`output_tools` 由适配器分配本地引用，业务参数与事实引用保留原有类型及引用结构。提供输出约束及有界纠正的取舍参考 [Pydantic AI 的输出契约提示](https://github.com/pydantic/pydantic-ai/blob/721c78d6014f197c595a9c2a83789aa4dbf6d008/pydantic_ai_slim/pydantic_ai/_output.py#L722-L733) 和 [校验错误转为重试反馈](https://github.com/pydantic/pydantic-ai/blob/721c78d6014f197c595a9c2a83789aa4dbf6d008/pydantic_ai_slim/pydantic_ai/_output.py#L124-L126)。Agenstra 沿用自己的安全错误码和恢复预算。
 
 输出上限包含供应商计入输出的推理 tokens。`finish_reason=length` 返回 `model_output_truncated`；兼容网关返回空白正文、报告的输出量达到本次实际请求上限时，也归入该错误，而非普通 JSON 格式错误。空输出规则同时适用于 JSON 内容模式和 `output_tools`：工具输出模式还要求响应没有任何工具调用，才推断空输出耗尽。JSON 正文非空、解析返回 `unexpected EOF` 且报告的输出量达到本次实际上限时，同样按耗尽处理，即使网关标记 `stop`。`output_tools` 的单个已声明输出函数也采用该规则：先核验调用数量、类型和函数名，再检查未完成的参数 JSON；网关标记 `tool_calls` 不证明参数完整。不补全或执行被截断的内容。其他语法错误、完整但契约无效的 JSON，以及数量、类型或名称无效的工具调用仍保留原格式错误。没有已知请求上限或有效输出量时，不猜测未完成正文的原因。完整且通过契约校验的正文或工具调用不会仅因用量达到上限而被拒绝。
 
@@ -235,6 +235,17 @@ CLI 使用既有 AGENSTRA_SERVER / AGENSTRA_ADMIN_API_KEY。models.json 包含 M
 配置了任务模型总 token 预算时，已发出的请求若超时、被取消或收到成功响应后正文中断，且没有有效供应商用量，原预留额度继续作为未知用量保留；不将未收到的输出视为零，也不允许记忆超时或提取器取消后释放这部分额度供后续决策使用。兼容 HTTP 适配器在这类有预算的传输超时或成功响应中断后不自动重发。有效供应商计量和发送前失败仍按真实证据结算；未配置任务总 token 预算时保留原重试策略。预算中的未知预留不代表供应商实际计费 token 数。
 
 取消仍保留原错误分类，不被推断为超时；明确的安全错误码仍优先，不因错误链同时包含取消就将已知拒绝改记为未知预留。SDK 直接使用 `AgentRuntime`，或自定义记忆提取器返回保留错误链的 `context.Canceled` 时，已尝试且尚无有效计量的有预算请求同样保留未知预留；已报告用量与未发出的请求仍按真实证据结算。宿主请求整体取消时继续保留已写入检查点的调用预留，不将本地取消当作供应商计费已经终止的证明。
+
+
+### 完整对象的格式兼容
+
+业务决策的 JSON 内容及本轮已声明函数的参数，共用有界的格式规范化。支持 UTF-8 BOM、完整的外层 Markdown 代码围栏、对象或数组尾随逗号、字符串内原始控制字符、最多 32 个与现有嵌套不匹配的多余闭合符号，以及完整根对象后最多 32 字节的多余闭合符号与空白。扫描器识别引号和转义，保留字符串内容、数值精度、字段位置与数组顺序。只有构成完整 JSON 对象的候选结果才继续进入原有重复键、Schema、事实引用、授权、审批及预算检查。
+
+空字符串或 `null` 工具参数按 `{}` 处理前，先验证当轮函数的完整参数 Schema 接受 `{}`。包含必填字段的函数继续返回原有校验错误。JSON 内容和记忆提取继续使用各自的根对象契约。此取舍参考 Reasonix 1.x 的 `NormalizeArguments` 与执行前参数校验，以及 Vercel AI SDK 的空参数校验路径。[Reasonix 1.x 源码](https://github.com/KHG420/DeepSeek-Reasonix/blob/df6b737fb/internal/tool/arguments.go) · [Vercel AI SDK 源码](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/parse-tool-call.ts)
+
+格式规范化采用线性扫描，受已有 8 MiB 响应上限约束，在流式响应完整接收及终止状态检查后执行。规范化复用本次模型用量，无额外模型请求。日志记录字节数和固定格式类别。剩余语法错误、缺失值、混合正文、多根对象及截断输出进入原有的有界失败恢复流程。
+
+LangChain 的 JSON 工具包含代码围栏、字符串换行和部分 JSON 解析。小π的业务执行入口使用完整对象校验，流式预览沿用其原有显示路径。Vercel AI SDK 的调用修复也在执行前重新运行完整解析与 Schema 校验。[LangChain 源码](https://github.com/langchain-ai/langchain/blob/master/libs/core/langchain_core/utils/json.py) · [Vercel AI SDK 调用修复](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/parse-tool-call.ts)
 
 
 ## 按需开启思考
