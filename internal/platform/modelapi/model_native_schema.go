@@ -17,7 +17,8 @@ func (m *HTTPJSONDecisionModel) decisionRequestModel(prompt string) HTTPJSONDeci
 	request := *m
 	if m.DecisionOutputMode == "native_tools" &&
 		strings.Contains(prompt, "\nYour previous response was not a valid agenstra.decision.v1 JSON decision.") &&
-		strings.Contains(prompt, "The response did not contain exactly one valid registered output tool.") {
+		(strings.Contains(prompt, "The response did not contain exactly one valid registered output tool.") ||
+			strings.Contains(prompt, "Include all required fields and only fields permitted for the selected decision kind.")) {
 		request.DecisionOutputMode = "output_tools"
 	}
 	return request

@@ -34,7 +34,12 @@ func TestNativeSchemaRecoveryIdentifiesArrayElementTypes(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				function := nativeTestFunction(t, payload, "records.reorder")
+				functionName := "submit_decision"
+				if n == 1 {
+					functionName = nativeTestFunction(t, payload, "records.reorder")["name"].(string)
+				} else {
+					assertSingleDecisionOutputRequest(t, payload)
+				}
 				arguments := `{"body":{"ids":["7",64,"7"]}}`
 				if n == 2 {
 					prompt := payload["messages"].([]any)[0].(agentcontract.JSON)["content"].(string)
@@ -49,9 +54,13 @@ func TestNativeSchemaRecoveryIdentifiesArrayElementTypes(t *testing.T) {
 						arguments = `{"body":{"ids":[7,64,7]}}`
 					}
 				}
+				if n == 2 {
+					arguments = `{"kind":"tool_batch","calls":[{"capability":"records.reorder","arguments":` + arguments + `,"reason":"Reorder records"}]}`
+				}
+
 				if err := json.NewEncoder(w).Encode(agentcontract.JSON{"choices": []any{agentcontract.JSON{
 					"message": agentcontract.JSON{"tool_calls": []any{agentcontract.JSON{"type": "function", "function": agentcontract.JSON{
-						"name": function["name"], "arguments": arguments}}}}, "finish_reason": "tool_calls"}}}); err != nil {
+						"name": functionName, "arguments": arguments}}}}, "finish_reason": "tool_calls"}}}); err != nil {
 					t.Error(err)
 				}
 			}))
@@ -83,8 +92,14 @@ func TestNativeSchemaRecoveryIdentifiesArrayElementTypes(t *testing.T) {
 				if err != nil || string(actual) != `{"body":{"ids":[7,64,7]}}` {
 					t.Fatal("corrected numeric IDs, order or duplicates were changed", string(actual), err)
 				}
-			} else if state.Status != "failed" || len(state.Pending) != 0 {
-				t.Fatal("unchanged invalid strings were coerced or accepted", state)
+			} else {
+				if len(state.Pending) != 1 {
+					t.Fatal("recovery lost the original invalid proposal")
+				}
+				outcome, err := reactcore.ExecuteCall(t.Context(), provider, runtime.Grants, state.Pending[0].Call, nil)
+				if err != nil || outcome.ErrorCode != "capability_input_invalid" || outcome.Fact != nil || provider.called != 0 {
+					t.Fatal("unchanged invalid business input was accepted or coerced", outcome, err)
+				}
 			}
 		})
 	}

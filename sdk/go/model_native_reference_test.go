@@ -96,7 +96,7 @@ func TestSDKNativeReferenceProposalsRespectRuntimeValidationAndPolicy(t *testing
 					return
 				}
 				if tc.modelRejected && strings.Contains(messages[0].(map[string]any)["content"].(string), "Your previous response was not a valid") {
-					nativeSDKReply(t, w, "final", agenstra.JSON{"answer_markdown": "The update was rejected.", "fact_ids": []string{packet.Facts[0].FactID}})
+					nativeSDKReply(t, w, "submit_decision", agenstra.JSON{"kind": "final", "answer_markdown": "The update was rejected.", "fact_ids": []string{packet.Facts[0].FactID}})
 					return
 				}
 				if len(packet.Facts) == 0 {
